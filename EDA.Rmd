@@ -1,0 +1,455 @@
+---
+title: "Term Deposit Classification Problem"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Goal
+ The goal is to predict if a client will subscribe a term deposit.<br> A term deposit is a cash investment held at a financial institution. The money is invested for an agreed rate of interest over a fixed amount of time, or term. It also can be called having a fixed deposit account.
+ 
+## Breakdown
+ I will split the process in three. First, i will perform and Exploratory Data Analysis on the dataset now, then build a machine learning model to predict if the client would want to subscribe for a term deposit then build a Web Application for convinence.
+ As the data scientist, i would really want to focus on the people that will want to subscribe for a term deposit, knowing the really important factors that influences this will be my end goal. 
+ 
+## Loading Library and Dataset
+```{r message=FALSE}
+library(tidyverse)
+
+
+theme_set(ggthemes::theme_gdocs())
+```
+
+```{r}
+bank_df <- read_delim("bank.csv", ";", escape_double = FALSE, trim_ws = TRUE )
+
+head(bank_df)
+```
+
+## Data Dictionary 
+<ol>
+
+<li> age (numeric) </li>
+<li> job : type of job </li>
+<li> marital : marital status </li>
+<li> education </li>
+<li> default: has credit in default? </li>
+<li> balance: average yearly balance, in euros (numeric) </li>
+<li> housing: has housing loan? </li>
+<li> loan: has personal loan? </li>
+   <h5> Related with the last contact of the current campaign: </h5>
+<li> contact: contact communication type (categorical: unknown,telephone,cellular) </li>
+<li> day: last contact day of the month (numeric) </li>
+<li> month: last contact month of year </li>
+<li> duration: last contact duration, in seconds (numeric) </li>
+   <h5> Other attributes: </h5>
+<li> campaign: number of contacts performed during this campaign and for this client (numeric, includes last contact) </li>
+<li> pdays: number of days that passed by after the client was last contacted from a previous campaign (numeric, -1 means client was not previously contacted) </li>
+<li> previous: number of contacts performed before this campaign and for this client (numeric)  </li>
+<li> poutcome: outcome of the previous marketing campaign (categorical: unknown,other,failure,success) </li>
+  <h5> Output variable (desired target): </h5>
+<li> y - has the client subscribed a term deposit? (binary: "yes","no")</li>
+</ol>
+
+## EDA Pipleine
+<ul>
+<li> Getting a summary Statistics of our dataset </li>
+<li> Converting Variables to proper data formats </li>
+<li> Check for class Imbalance </li>
+<li>Look at the relationship of the predictors to the target outcomes</li>
+</ul>
+
+## EDA
+
+```{r}
+bank_df <-  bank_df %>% mutate_if(is.character, factor)
+```
+
+```{r}
+## Smmary Statistics
+## Some numeric variables are skewed, Normalization will be required when creating recipe steps
+skimr::skim(bank_df)
+```
+
+## Test for class imbalance 
+```{r}
+## From the summary statistics above, this dataset has class imbalance
+## To visualize it.
+bank_df %>%
+   ggplot(aes(y, fill = y))+
+   geom_bar(stat = "count", show.legend = F, col = "black", alpha = 0.9)+
+   labs(title = "Test for Class Imbalance",
+        subtitle = "It is very obvious, there is a serious class imbalance case here",
+        x = NULL,
+        y = NULL)
+```
+
+## Comparing Age to Outcome
+```{r}
+## I suspect Older people are more likely to subscribe for a term deposit
+## This is a dataset about Fixed Deposit accounts, it makes sense not to see younger age groups
+bank_df %>%
+   ggplot(aes(age, fill = y))+
+   geom_histogram()
+
+```
+
+
+```{r}
+
+bank_df %>%
+   mutate(age_groups = cut(age, breaks = seq(18, 90, 10), include.lowest = T, right = F)) %>%
+   ggplot(aes(age_groups, fill = y))+
+   geom_bar(stat = "count")
+
+## Here we see that age ranges from 29-39 has the highest turnout, but is that so?
+## Lets look at their ratio plot
+## Interest in Term deposit increases with Age
+bank_df %>%
+   mutate(age_groups = cut(age, breaks = seq(18, 90, 10), include.lowest = T)) %>%
+   ggplot(aes(age_groups, fill = y))+
+   geom_bar(stat = "count", position = "fill")+
+   scale_y_continuous(labels = scales::percent_format())+
+   labs(title = "Relationship between different age groups\n and Opening a Fixed Deposit Account",
+        y = "Rate",
+        x = "Age Groups",
+        fill = "Outcome")
+
+
+```
+
+## Comparing Job to Outcome
+```{r}
+## Creating a Positivity Ratio profile on the different occupation inn the dataset.
+## The retired people comes first with confirms the question raised before about elderly people more interested in term deposit
+## A simple Plot to show our Results
+## Missing values are in this variable, "Unknown"
+bank_df %>%
+   select(job, y) %>%
+   group_by(job) %>%
+   count(y) %>%
+   ungroup() %>%
+   mutate(job = str_to_title(job)) %>%
+   spread(key= y, value = n) %>%
+   mutate(positivity_ratio = round((yes/(yes+no)),3)) %>%
+   mutate(job = reorder(job, positivity_ratio)) %>%
+   arrange(desc(positivity_ratio)) %>%
+   ggplot(aes(positivity_ratio,job, col = job))+
+   geom_point()+
+   geom_segment(aes(xend = 0, x = positivity_ratio, y = job, yend = job))+
+   labs(
+      title = "Jobs and their Positivity Rates",
+      subtitle = "The Positivity rate here is defined as the percentage of the people\n that subscribed to a term deposit",
+      y = NULL,
+      x = NULL
+   )+
+   scale_x_continuous(labels = scales::percent_format())+
+   theme(
+      legend.position = "none",
+      axis.text.y = element_text(face = "bold.italic"),
+      plot.subtitle = element_text(face = "italic")
+   ) 
+ 
+
+```
+
+## Relationship between Marital Status and the Outcome.
+```{r}
+## The Number of Single people in the dataset is twice the number of divorced people
+## but 14.6% of the divorced set subscribed to a term deposit.
+
+ bank_df %>%
+   select(marital, y) %>%
+   group_by(marital) %>%
+   count(y)%>%
+   spread(key = y, value = n) %>%
+   mutate(total = yes+no,
+      positivity_ratio = round((yes/total),3)) %>%
+   arrange(desc(positivity_ratio)) %>%
+   select(marital,total, positivity_ratio) %>%
+   mutate(positivity_ratio = paste0(round(100*positivity_ratio,2),"% subscribed to a term deposit"))%>%
+   data.frame()
+
+   
+```
+
+## Relationship between Education and the Outcome.
+```{r}
+
+## There are also missing values here, "unknown".
+## Method of Imputation: knnImpute seems to be a better choice.
+## We can see that tertiary education category has the highest positivity rate.
+bank_df %>%
+   select(education, y) %>%
+   group_by(education) %>%
+   count(y) %>%
+   ungroup() %>%
+   spread(key = y, value = n) %>%
+   mutate(total = no + yes,
+          p_rate =round((yes/total)*100,2)) %>%
+   select(education,total,p_rate) %>%
+   arrange(desc(p_rate))
+
+
+## Creating a function to produce postivity rate table
+
+p_rate <- function(df,column_name){
+   column_name <- enquo(column_name)
+   
+   df %>%
+   select(!!column_name, y) %>%
+   group_by(!!column_name) %>%
+   count(y) %>%
+   ungroup() %>%
+   spread(key = y, value = n) %>%
+   mutate(total = no + yes,
+          p_rate =round((yes/total)*100,2)) %>%
+   select(!!column_name,total,p_rate) %>%
+   arrange(desc(p_rate))
+}
+   
+p_rate(bank_df,education)
+
+```
+
+## Relationship between Default and the Outcome.
+```{r}
+
+## Well, whether a customer has credit in default or not doesn't really seem to affect the outcome
+p_rate(bank_df,default)
+   
+```
+
+
+## Relationship between Balance and the Outcome.
+```{r}
+## Does it mean that someone who earns a negative amount is in debt?
+bank_df %>%
+   select(balance) %>%
+   summary()
+```
+
+```{r}
+## People that earn less than 10,000 Euros tends to subscribe to a term deposit? lets investigate further.
+## Normalization is required.
+bank_df %>%
+   filter(balance > 0) %>%
+   select(balance, y) %>%
+   ggplot(aes(balance, fill = y)) +
+   geom_histogram(show.legend = F)+
+   labs(
+      x = "Yearly average income"
+   )+
+   facet_wrap(y~., scales = "free")
+```
+
+
+```{r}
+## People that earn above 10,000 Euros yearly, are more likely not to subscribe for a term deposit. 
+bank_df %>%
+   filter(balance >10000 ) %>%
+   select(balance, y) %>%
+     ggplot(aes(balance, fill = y)) +
+   geom_histogram(show.legend = F)+
+   labs(
+      x = "Yearly average income"
+   )+
+   facet_wrap(y~., scales = "free")
+```
+
+
+```{r}
+## Also,if one is in debt (negative income), chances are that he/she could subscribe for a term deposit
+bank_df %>%
+   filter(balance < 0 ) %>%
+   select(balance, y) %>%
+   ggplot(aes(balance, fill = y)) +
+   geom_histogram(show.legend = F)+
+   labs(
+      x = "Yearly average income"
+   )+
+   facet_wrap(y~., scales = "free")
+```
+
+
+## Relationship between Housing Loan and the Outcome.
+```{r}
+
+## People that don't havea housing loan are almost twice more likely to subscribe for a term deposit.
+p_rate(bank_df,housing) 
+   
+
+
+
+
+
+```
+
+## Relationship between Persnal Loan and the Outcome.
+```{r}
+
+## People that don't have a personal loan are 2x more likely to subscribe for a term deposit.
+
+p_rate(bank_df,loan)
+```
+
+## Relationship between Contact and the Outcome.
+```{r}
+## There isn't much to differenciate them, although we have some missing values "unknown"
+
+p_rate(bank_df, contact)
+
+```
+
+## Relationship between Days and Months and the Outcome. 
+```{r}
+## It seems normal
+bank_df %>%
+   select(day, y) %>%
+   ggplot(aes(day, fill = y)) +
+   geom_histogram(show.legend = F)+
+   labs(
+      x = "Last contact day of the month"
+   )+
+   facet_wrap(y~., scales = "free")
+```
+
+```{r}
+## thoughts: I would want to combine the month and day to figure out if that day was on a holiday
+bank_df %>%
+   select(month, y) %>%
+   ggplot(aes(month, fill = y)) +
+   geom_bar(stat = "count", show.legend = F)+
+   labs(
+      x = "Last contact month of the year"
+   )
+```
+
+
+## Relationship between Call Duration and the Outcome.
+```{r}
+## I have a crazy thought, i want to know if richer customers had a higher call duration
+## Well, there doesn't seem to be any preferencial treatments here.
+## People who spent more than 8 minutes on the phone were more likely to subscribe? Lets dig in.
+
+options(scipen = 999)
+
+bank_df %>%
+   select(balance, duration, y) %>%
+   mutate(duration = duration/60) %>%
+   ggplot(aes(y = duration, x = balance, col = y)) +
+   geom_point(alpha = 0.3)+
+   geom_hline(yintercept = 8)+
+   scale_y_log10()+
+   scale_x_log10()+
+     labs(
+      y = "Call Duration in Minutes",
+      x = "Yearly average income",
+      col = "Outcome"
+   ) 
+
+
+```
+
+
+
+```{r}
+## People who spent more than 8 minutes on the phone were more likely to subscribe?
+## Yes, this is true
+
+bank_df %>%
+   mutate(duration = duration/60) %>%
+   mutate(test = ifelse(duration > 8,"More than 8 Minutes","Less than 8 Minutes")) %>%
+   select(balance, duration, y, test) %>%
+   ggplot(aes(y = duration, x = balance, col = y)) +
+   geom_point(alpha = 0.6)+
+   scale_y_log10()+
+   scale_x_log10()+
+   facet_wrap(~test, scales = "free")+
+   labs(
+      y = "Call Duration in Minutes",
+      x = "Yearly average income",
+      col = "Outcome"
+   )+
+   ggthemes::theme_fivethirtyeight()
+```
+
+## Relationship between Campaign and the Outcome.
+```{r}
+
+## People that subscribed didn't need to have too many campaigns
+bank_df %>%
+   select(campaign,y) %>%
+   ggplot(aes(campaign, fill = y))+
+   geom_boxplot()+
+  # scale_x_log10()+
+   coord_flip()
+```
+
+## Relationship between Pdays and the Outcome.
+```{r}
+bank_df %>%
+   select(pdays,y) %>%
+   ggplot(aes(pdays, fill = y))+
+   geom_boxplot()+
+   scale_x_log10()+
+   coord_flip()
+```
+
+## Relationship between Previous and the Outcome.
+```{r}
+bank_df %>%
+   select(previous,y) %>%
+   ggplot(aes(previous, fill = y))+
+   geom_boxplot()+
+   scale_x_log10()+
+   coord_flip()
+```
+
+## Relationship between poutcome and the Outcome.
+```{r}
+## alot of missing values, i think will remove this variable
+
+p_rate(bank_df,poutcome)
+```
+
+## Some thoughts and Feature Engineering
+Somme of the strong indicators here are that 
+<ul>
+    <li> Older People are more likely to subscribe </li>
+    <li> Retired people and students have a high positivity rate compared to others </li>
+    <li> The Divorced show a high rate too, but should that really be considered? </li>
+    <li> People that earn above 10,000 Euros yearly are less likely to subscribe </li>
+    <li> People that had a call duration of 8 minutes and higher were more likely to subscribe </li>
+    <li> People that were going to subscribe didn't have to recieve many campaigns </li>
+    
+</ul>
+Lets create a new variable containing most of our strong variables and test on the outcome
+
+```{r}
+## By creating a check list to get people who are either students or retired 
+## who earn less than 10,000 Euros yearly and recieved a call that lasted for more than 8 Minutes, 
+## the postivity rate is 47.83% from a total of 46 people.
+bank_df %>%
+   mutate(duration = duration/60,
+          test = ifelse(job %in% c("student","retired") & balance < 10000 & duration > 8,
+                        "They have the strong Variables","They dont have it")) %>%
+   p_rate(test)
+```
+
+Well, that is all for now. I was able to really understand the dataset and when ML algorithms are applied i can get a better understanding. 
+
+
+
+```{r}
+bank_df %>%
+   mutate(education = as.character(education),
+          job = as.character(job),
+          job = ifelse(job == "unknown",NA,job),
+          education = ifelse(education == "unknown",NA,education)) %>%
+   write_csv("bank_ML.csv")
+   
+## For Contact we will create a new variable to test for unknown
+```
