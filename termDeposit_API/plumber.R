@@ -11,6 +11,7 @@ library(plumber)
 library(tidyverse)
 library(tidymodels)
 library(scales)
+library(rapidoc)
 
 model <- read_rds("term_deposit_model.rds")
 
@@ -47,10 +48,10 @@ function() {
 #* @param o Previous
 #* @param p Poutcome
 
-#* @response Job Jobs are: unemployed, services, management, blue-collar, self-employed,technician, entrepreneur, admin, student, housemaid, retired.
-#* @response Contact Contacts are: cellular, unknown, telephone
-#* @response Month Months in jan,feb,mar,apr,may,jun,jul,aug,sep,oct,nov,dec
-#* @response Poutcome Poutcome in unknown,failure,other,success
+#* @response Job  unemployed, services, management, blue-collar, self-employed,technician, entrepreneur, admin, student, housemaid, retired.
+#* @response Contact  cellular, unknown, telephone
+#* @response Month jan,feb,mar,apr,may,jun,jul,aug,sep,oct,nov,dec
+#* @response Poutcome unknown,failure,other,success
 #* @response Marital married,single,divorced
 #* @response Education primary,secondary,tertiary
 #* @serializer png
@@ -91,5 +92,13 @@ function(a,b,c,d,e,f,g,h,i,j,k,l,m,n,o,p) {
     print(prob_plot)
     
 
-    }
+}
+
+#* @plumber 
+
+function(pr){
+  pr %>%
+    pr_set_docs(docs = "rapidoc")
+    
+}
 
